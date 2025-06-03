@@ -652,8 +652,8 @@ namespace ComicRentalSystem_14Days
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
             this._logger?.Log("主表單正在關閉。正在取消訂閱事件。");
-            if (this._comicService != null) this._comicService.ComicsChanged -= ComicService_ComicsChanged;
-            if (dgvAvailableComics != null) dgvAvailableComics.SelectionChanged -= dgvAvailableComics_SelectionChanged;
+            this._comicService?.ComicsChanged -= ComicService_ComicsChanged;
+            this.dgvAvailableComics?.SelectionChanged -= dgvAvailableComics_SelectionChanged;
             base.OnFormClosing(e);
         }
 
@@ -832,7 +832,7 @@ namespace ComicRentalSystem_14Days
             catch (Exception ex)
             {
                 _logger?.LogError("套用可租借漫畫篩選器時發生錯誤。", ex);
-                if (dgvAvailableComics != null && dgvAvailableComics.IsHandleCreated && !dgvAvailableComics.IsDisposed)
+                if (dgvAvailableComics is not null && dgvAvailableComics.IsHandleCreated && !dgvAvailableComics.IsDisposed)
                 { Action clear = () => dgvAvailableComics.DataSource = null; if (dgvAvailableComics.InvokeRequired) dgvAvailableComics.Invoke(clear); else clear(); }
             }
         }

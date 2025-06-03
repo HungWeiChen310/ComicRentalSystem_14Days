@@ -216,7 +216,7 @@ namespace ComicRentalSystem_14Days.Forms
             }
         }
 
-        private void btnDeleteMember_Click(object sender, EventArgs e)
+        private async void btnDeleteMember_Click(object sender, EventArgs e) // Changed to async void
         {
             if (dgvMembers.SelectedRows.Count > 0 && _memberService != null)
             {
@@ -240,7 +240,7 @@ namespace ComicRentalSystem_14Days.Forms
                     {
                         MessageBox.Show("無法檢查會員租借狀態，漫畫服務未初始化。", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
                         LogErrorActivity("Could not check member rental status: _comicService is null.");
-                        return; 
+                        return;
                     }
 
                     LogActivity($"嘗試刪除會員 ID: {selectedMember.Id}，姓名: '{selectedMember.Name}'。正在顯示確認對話方塊。");
@@ -250,9 +250,11 @@ namespace ComicRentalSystem_14Days.Forms
                         LogActivity($"使用者已確認刪除會員 ID: {selectedMember.Id}。");
                         try
                         {
-                            _memberService.DeleteMember(selectedMember.Id); 
+                            await _memberService.DeleteMemberAsync(selectedMember.Id); // Changed to await async version
                             string usernameToDelete = selectedMember.Username; 
                             
+                            // Note: _authenticationService.DeleteUser is still synchronous.
+                            // If it were async, this whole block would need more careful async/await handling.
                             if (_authenticationService != null)
                             {
                                 bool userDeleted = _authenticationService.DeleteUser(usernameToDelete);

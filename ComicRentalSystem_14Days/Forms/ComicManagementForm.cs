@@ -281,7 +281,7 @@ namespace ComicRentalSystem_14Days.Forms
             }
         }
 
-        private void btnDeleteComic_Click(object sender, EventArgs e)
+        private async void btnDeleteComic_Click(object sender, EventArgs e) // Changed to async void
         {
             if (dgvComics.SelectedRows.Count > 0 && _comicService != null)
             {
@@ -292,7 +292,7 @@ namespace ComicRentalSystem_14Days.Forms
                     {
                         MessageBox.Show($"漫畫 '{selectedComic.Title}' (ID: {selectedComic.Id}) 目前已租借中，無法刪除。\n請先處理歸還事宜。", "刪除錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
                         LogActivity($"嘗試刪除漫畫 ID: {selectedComic.Id}，書名: '{selectedComic.Title}' 失敗：漫畫目前已租借。");
-                        return; 
+                        return;
                     }
 
                     LogActivity($"Attempting to delete comic ID: {selectedComic.Id}, Title: '{selectedComic.Title}'. Showing confirmation dialog.");
@@ -305,18 +305,19 @@ namespace ComicRentalSystem_14Days.Forms
                         LogActivity($"使用者已確認刪除漫畫 ID: {selectedComic.Id}。");
                         try
                         {
-                            _comicService.DeleteComic(selectedComic.Id);
-                            LogActivity($"漫畫 ID: {selectedComic.Id} 已由服務成功標記為待刪除。UI 將透過事件重新整理。");
+                            await _comicService.DeleteComicAsync(selectedComic.Id); // Changed to await async version
+                            LogActivity($"漫畫 ID: {selectedComic.Id} 已由服務成功刪除 (非同步)。UI 將透過 ComicsChanged 事件重新整理。");
                             MessageBox.Show("漫畫已刪除。", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                            // LoadComicsData(); // Data will be reloaded via ComicsChanged event
                         }
                         catch (InvalidOperationException opEx)
                         {
-                            LogErrorActivity($"Operation error deleting comic ID: {selectedComic.Id}.", opEx);
+                            LogErrorActivity($"Operation error deleting comic ID: {selectedComic.Id} (async).", opEx); // Log remains same
                             MessageBox.Show(opEx.Message, "操作錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
                         }
                         catch (Exception ex)
                         {
-                            LogErrorActivity($"Generic error deleting comic ID: {selectedComic.Id}.", ex);
+                            LogErrorActivity($"Generic error deleting comic ID: {selectedComic.Id} (async).", ex); // Log remains same
                             MessageBox.Show($"刪除漫畫時發生錯誤: {ex.Message}", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
                         }
                     }

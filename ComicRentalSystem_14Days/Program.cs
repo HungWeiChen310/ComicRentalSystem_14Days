@@ -17,7 +17,7 @@ namespace ComicRentalSystem_14Days
 
 
         [STAThread]
-        static void Main()
+        static async Task Main() // Changed to async Task
         {
             ApplicationConfiguration.Initialize();
 
@@ -27,33 +27,45 @@ namespace ComicRentalSystem_14Days
             AppFileHelper = new FileHelper();
             AppReloadService = new ReloadService();
 
-            if (AppFileHelper != null && AppLogger != null)
+            try // Added try for async initialization
             {
-                AppComicService = new ComicService(AppFileHelper, AppLogger);
-                AppMemberService = new MemberService(AppFileHelper, AppLogger, AppComicService); 
-                AppAuthService = new AuthenticationService(AppFileHelper, AppLogger);
-                AppAuthService.EnsureAdminUserExists("admin", "admin123");
-            }
-
-            Application.ThreadException += new System.Threading.ThreadExceptionEventHandler(Application_ThreadException);
-            AppDomain.CurrentDomain.UnhandledException += new UnhandledExceptionEventHandler(CurrentDomain_UnhandledException);
-
-            try
-            {
-                if (AppLogger != null && AppAuthService != null && AppComicService != null && AppMemberService != null && AppReloadService != null)
+                if (AppFileHelper != null && AppLogger != null)
                 {
-                    Application.Run(new LoginForm(AppLogger, AppAuthService, AppComicService, AppMemberService, AppReloadService));
+                    // Initialize services asynchronously
+                    AppComicService = await ComicService.CreateAsync(AppFileHelper, AppLogger);
+                    AppMemberService = await MemberService.CreateAsync(AppFileHelper, AppLogger, AppComicService);
+                    AppAuthService = new AuthenticationService(AppFileHelper, AppLogger); // AuthService constructor is not async
+                    AppAuthService.EnsureAdminUserExists("admin", "admin123");
                 }
                 else
                 {
-                    MessageBox.Show("無法初始化核心服務，應用程式即將關閉。", "嚴重錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    AppLogger?.LogError("由於核心服務 (Logger、AuthService、ComicService、MemberService 或 ReloadService) 初始化失敗，應用程式已終止。");
+                    // This case might be less likely if AppLogger or AppFileHelper itself fails, but good for robustness
+                    MessageBox.Show("無法初始化基礎輔助程式 (Logger/FileHelper)，應用程式即將關閉。", "嚴重錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    AppLogger?.LogError("由於基礎輔助程式 (Logger/FileHelper) 初始化失敗，應用程式已終止。");
+                    return; // Exit if essential helpers are null
                 }
-            }
-            catch (Exception ex)
+
+                Application.ThreadException += new System.Threading.ThreadExceptionEventHandler(Application_ThreadException);
+            AppDomain.CurrentDomain.UnhandledException += new UnhandledExceptionEventHandler(CurrentDomain_UnhandledException);
+
+            // This try-catch remains for Application.Run and other synchronous parts of Main
+            // The async initialization is handled by the try-catch block above.
+            if (AppLogger != null && AppAuthService != null && AppComicService != null && AppMemberService != null && AppReloadService != null)
             {
-                AppLogger?.LogError("由於 Main 中發生未處理的例外狀況，應用程式已終止。", ex);
-                MessageBox.Show("應用程式發生嚴重錯誤，即將關閉。\n詳情請查看日誌檔案。", "嚴重錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Application.Run(new LoginForm(AppLogger, AppAuthService, AppComicService, AppMemberService, AppReloadService));
+            }
+            else
+            {
+                // This else block will now primarily catch issues if the async initialization above failed
+                // and one of the services is null.
+                MessageBox.Show("無法初始化核心服務，應用程式即將關閉。", "嚴重錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                AppLogger?.LogError("由於核心服務 (Logger、AuthService、ComicService、MemberService 或 ReloadService) 初始化失敗或未正確載入，應用程式已終止。");
+            }
+        }
+            catch (Exception ex) // Catches exceptions from async initialization or other setup
+            {
+                AppLogger?.LogError("由於 Main 中發生未處理的例外狀況 (可能在初始化期間)，應用程式已終止。", ex);
+                MessageBox.Show($"應用程式發生嚴重錯誤，即將關閉。\n錯誤: {ex.Message}\n詳情請查看日誌檔案。", "嚴重錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             finally
             {

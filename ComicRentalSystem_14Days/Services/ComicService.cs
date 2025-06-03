@@ -13,13 +13,20 @@ namespace ComicRentalSystem_14Days.Services
     public class ComicService
     {
         private readonly IFileHelper _fileHelper;
-        private readonly string _comicFileName = "comics.csv";
+        private readonly string _comicFileName = Constants.FileNames.Comics; // Replaced
         private List<Comic> _comics = new List<Comic>();
         private readonly ILogger _logger;
         private readonly object _comicsLock = new object();
 
         public delegate void ComicDataChangedEventHandler(object? sender, EventArgs e);
         public event ComicDataChangedEventHandler? ComicsChanged;
+
+        public static async Task<ComicService> CreateAsync(IFileHelper fileHelper, ILogger logger)
+        {
+            var service = new ComicService(fileHelper, logger);
+            await service.ReloadAsync(); // Ensure comics are loaded on creation
+            return service;
+        }
 
         public async Task ReloadAsync()
         {
@@ -33,28 +40,31 @@ namespace ComicRentalSystem_14Days.Services
             _logger.Log($"ComicService 已非同步重新載入。已載入 {_comics.Count} 本漫畫。");
         }
 
-        public ComicService(IFileHelper fileHelper, ILogger? logger) 
+        private ComicService(IFileHelper fileHelper, ILogger? logger)
         {
             _fileHelper = fileHelper ?? throw new ArgumentNullException(nameof(fileHelper));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger), "ComicService 的記錄器不可為空。");
 
             _logger.Log("ComicService 初始化中。");
 
+            // Synchronous load during construction is kept for now,
+            // but CreateAsync is the preferred way to instantiate and load.
             LoadComicsFromFile(); 
             _logger.Log($"ComicService 初始化完成。已載入 {_comics.Count} 本漫畫。");
         }
 
         private void LoadComicsFromFile()
         {
-            _logger.Log($"正在嘗試從檔案載入漫畫 (同步): '{_comicFileName}'。 (Existing log for context)");
+            _logger.Log($"正在嘗試從檔案載入漫畫 (同步): '{_comicFileName}'。");
             lock (_comicsLock)
             {
                 _logger.Log($"LoadComicsFromFile [Before Read]: Attempting to read from file '{_comicFileName}'. Full path: '{_fileHelper.GetFullFilePath(_comicFileName)}'.");
                 try
                 {
-                    _comics = _fileHelper.ReadFile<Comic>(_comicFileName, Comic.FromCsvString);
+                    // Reading the raw string synchronously.
+                    string csvData = _fileHelper.ReadFile(_comicFileName);
+                    _comics = ParseComicsFromCsv(csvData);
                     _logger.Log($"LoadComicsFromFile [After Read]: Successfully read and parsed. Loaded {_comics.Count} comics from '{_comicFileName}'.");
-                    _logger.Log($"成功從 '{_comicFileName}' (同步) 載入 {_comics.Count} 本漫畫。 (Existing log for context)");
                 }
                 catch (Exception ex) when (ex is FormatException || ex is IOException)
                 {
@@ -69,80 +79,113 @@ namespace ComicRentalSystem_14Days.Services
             }
         }
 
+        private List<Comic> ParseComicsFromCsv(string csvData)
+        {
+            var comicsList = new List<Comic>();
+            if (string.IsNullOrWhiteSpace(csvData))
+            {
+                _logger.Log($"CSV 資料為空或僅包含空白字元。路徑: '{_fileHelper.GetFullFilePath(_comicFileName)}'.");
+                return comicsList;
+            }
+
+            var lines = csvData.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            for (int i = 0; i < lines.Length; i++)
+            {
+                var line = lines[i];
+                if (string.IsNullOrWhiteSpace(line)) continue;
+                try
+                {
+                    comicsList.Add(Comic.FromCsvString(line));
+                }
+                catch (FormatException formatEx)
+                {
+                    // Log with line number (i+1 because lines are 1-indexed for human readability)
+                    _logger.LogError($"解析行失敗 (行號: {i + 1}) for file '{_comicFileName}' (Full path: '{_fileHelper.GetFullFilePath(_comicFileName)}'): '{line}'. 錯誤: {formatEx.Message}", formatEx);
+                }
+            }
+            return comicsList;
+        }
+
         private async Task<List<Comic>> InternalLoadComicsAsync()
         {
-            _logger.Log($"正在嘗試從檔案非同步載入漫畫: '{_comicFileName}'。 (Existing log for context)");
+            _logger.Log($"正在嘗試從檔案非同步載入漫畫: '{_comicFileName}'。");
             try
             {
                 _logger.Log($"InternalLoadComicsAsync [Before Read]: Attempting to read from file '{_comicFileName}'. Full path: '{_fileHelper.GetFullFilePath(_comicFileName)}'.");
                 string csvData = await _fileHelper.ReadFileAsync(_comicFileName);
-                
-               
                 _logger.Log($"InternalLoadComicsAsync [Raw Data]: Read from '{_comicFileName}'. Full path: '{_fileHelper.GetFullFilePath(_comicFileName)}'. Data: '{csvData.Replace("\r", "\\r").Replace("\n", "\\n")}'.");
 
-                if (string.IsNullOrWhiteSpace(csvData))
-                {
-                    _logger.Log($"漫畫檔案 '{_comicFileName}' (非同步) 為空或找不到。Full path: '{_fileHelper.GetFullFilePath(_comicFileName)}'. (Enhanced log)");
-                    return new List<Comic>();
-                }
-
-                var comicsList = new List<Comic>();
-                var lines = csvData.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-                foreach (var line in lines)
-                {
-                    if (string.IsNullOrWhiteSpace(line)) continue;
-                    try
-                    {
-                        comicsList.Add(Comic.FromCsvString(line));
-                    }
-                    catch (FormatException formatEx)
-                    {
-                 
-                        _logger.LogError($"解析行失敗 (非同步) for file '{_comicFileName}' (Full path: '{_fileHelper.GetFullFilePath(_comicFileName)}'): '{line}'. 錯誤: {formatEx.Message}", formatEx);
-                    }
-                }
-                _logger.Log($"成功從 '{_comicFileName}' (非同步) 載入並解析 {comicsList.Count} 本漫畫。 (Existing log for context)");
-                return comicsList;
+                var loadedComics = ParseComicsFromCsv(csvData);
+                _logger.Log($"成功從 '{_comicFileName}' (非同步) 載入並解析 {loadedComics.Count} 本漫畫。");
+                return loadedComics;
             }
             catch (FileNotFoundException)
             {
-                _logger.LogWarning($"漫畫檔案 '{_comicFileName}' (非同步) 找不到。Full path: '{_fileHelper.GetFullFilePath(_comicFileName)}'. 返回空列表。 (Enhanced log)");
+                _logger.LogWarning($"漫畫檔案 '{_comicFileName}' (非同步) 找不到。Full path: '{_fileHelper.GetFullFilePath(_comicFileName)}'. 返回空列表。");
                 return new List<Comic>();
             }
             catch (IOException ioEx)
             {
-                _logger.LogError($"讀取漫畫檔案 '{_comicFileName}' (非同步) 時發生IO錯誤: {ioEx.Message}. Full path: '{_fileHelper.GetFullFilePath(_comicFileName)}'. (Enhanced log)", ioEx);
+                _logger.LogError($"讀取漫畫檔案 '{_comicFileName}' (非同步) 時發生IO錯誤: {ioEx.Message}. Full path: '{_fileHelper.GetFullFilePath(_comicFileName)}'.", ioEx);
                 return new List<Comic>(); 
             }
             catch (Exception ex)
             {
-                _logger.LogError($"從 '{_comicFileName}' (非同步) 載入漫畫時發生未預期的錯誤: {ex.Message}. Full path: '{_fileHelper.GetFullFilePath(_comicFileName)}'. (Enhanced log)", ex);
+                _logger.LogError($"從 '{_comicFileName}' (非同步) 載入漫畫時發生未預期的錯誤: {ex.Message}. Full path: '{_fileHelper.GetFullFilePath(_comicFileName)}'.", ex);
                 return new List<Comic>();
             }
         }
 
+        // Made private, will be replaced by SaveComicsAsync for primary use
         private void SaveComics()
         {
-            _logger.Log($"正在嘗試將 {_comics.Count} 本漫畫儲存到檔案: '{_comicFileName}'。 (Existing log for context)"); 
+            _logger.Log($"[同步儲存] 正在嘗試將 {_comics.Count} 本漫畫儲存到檔案: '{_comicFileName}'。");
             lock (_comicsLock)
             {
-                _logger.Log($"SaveComics [Before Write]: Preparing to write {_comics.Count} comics to file '{_comicFileName}'. Full path: '{_fileHelper.GetFullFilePath(_comicFileName)}'.");
-                
+                _logger.Log($"SaveComics (sync) [Before Write]: Preparing to write {_comics.Count} comics to file '{_comicFileName}'. Full path: '{_fileHelper.GetFullFilePath(_comicFileName)}'.");
                 try
                 {
                     _fileHelper.WriteFile<Comic>(_comicFileName, _comics, comic => comic.ToCsvString());
-                    
-                    _logger.Log($"SaveComics [After Write]: Successfully called _fileHelper.WriteFile for '{_comicFileName}' with {_comics.Count} comics.");
-                    
-                    OnComicsChanged(); 
-
-                    _logger.Log($"已成功將 {_comics.Count} 本漫畫儲存到 '{_comicFileName}'。 (Existing log for context)");
+                    _logger.Log($"SaveComics (sync) [After Write]: Successfully called _fileHelper.WriteFile for '{_comicFileName}' with {_comics.Count} comics.");
+                    OnComicsChanged(); // Keep sync OnComicsChanged if this path is ever used, though it shouldn't be primary.
+                    _logger.Log($"[同步儲存] 已成功將 {_comics.Count} 本漫畫儲存到 '{_comicFileName}'。");
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError($"將漫畫儲存到 '{_comicFileName}' 時發生錯誤。 Full path: '{_fileHelper.GetFullFilePath(_comicFileName)}'.", ex);
-                    throw;
+                    _logger.LogError($"[同步儲存] 將 {(_comics != null ? _comics.Count : 0)} 本漫畫儲存到 '{_comicFileName}' 時發生錯誤。 Full path: '{_fileHelper.GetFullFilePath(_comicFileName)}'.", ex);
+                    throw; // Rethrow to indicate failure of sync save if it was critically called.
                 }
+            }
+        }
+
+        public async Task SaveComicsAsync()
+        {
+            int comicsCount = 0;
+            string fullPath = string.Empty;
+            try
+            {
+                List<Comic> comicsToSave;
+                lock (_comicsLock) // Lock only for reading _comics list to avoid issues if another thread modifies it
+                {
+                    // Create a copy of the list to save, to avoid holding the lock during I/O
+                    comicsToSave = new List<Comic>(_comics);
+                }
+                comicsCount = comicsToSave.Count;
+                fullPath = _fileHelper.GetFullFilePath(_comicFileName);
+
+                _logger.Log($"[非同步儲存] 正在嘗試將 {comicsCount} 本漫畫儲存到檔案: '{_comicFileName}'. Full path: '{fullPath}'.");
+
+                await _fileHelper.WriteFileAsync<Comic>(_comicFileName, comicsToSave, comic => comic.ToCsvString());
+
+                _logger.Log($"[非同步儲存] 已成功將 {comicsCount} 本漫畫儲存到 '{_comicFileName}'. Full path: '{fullPath}'.");
+                OnComicsChanged(); // This will notify UI or other listeners
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"[非同步儲存] 將 {comicsCount} 本漫畫儲存到 '{_comicFileName}' (Full path: '{fullPath}') 時發生錯誤。", ex);
+                // Depending on requirements, you might want to rethrow or handle more gracefully
+                // For now, logging the error is the primary action. If rethrowing, ensure callers handle it.
+                throw;
             }
         }
 
@@ -176,7 +219,7 @@ namespace ComicRentalSystem_14Days.Services
             return comic;
         }
 
-        public void AddComic(Comic comic)
+        public async Task AddComicAsync(Comic comic)
         {
             if (comic == null)
             {
@@ -187,7 +230,7 @@ namespace ComicRentalSystem_14Days.Services
 
             _logger.Log($"正在嘗試新增漫畫: 書名='{comic.Title}', 作者='{comic.Author}'。");
 
-            lock (_comicsLock)
+            lock (_comicsLock) // Lock for modifying _comics collection and GetNextIdInternal
             {
                 if (comic.Id != 0 && _comics.Any(c => c.Id == comic.Id))
                 {
@@ -203,17 +246,17 @@ namespace ComicRentalSystem_14Days.Services
 
                 if (comic.Id == 0)
                 {
-                    comic.Id = GetNextIdInternal();
+                    comic.Id = GetNextIdInternal(); // Assumes GetNextIdInternal is safe within this lock
                     _logger.Log($"已為漫畫 '{comic.Title}' 產生新的ID {comic.Id}。");
                 }
 
                 _comics.Add(comic);
                 _logger.Log($"漫畫 '{comic.Title}' (ID: {comic.Id}) 已新增至記憶體列表。漫畫總數: {_comics.Count}。");
-                SaveComics(); 
             }
+            await SaveComicsAsync();
         }
 
-        public void UpdateComic(Comic comic)
+        public async Task UpdateComicAsync(Comic comic)
         {
             if (comic == null)
             {
@@ -223,8 +266,8 @@ namespace ComicRentalSystem_14Days.Services
             }
 
             _logger.Log($"正在嘗試更新ID為: {comic.Id} (書名='{comic.Title}') 的漫畫。");
-
-            lock (_comicsLock)
+            bool needsSave = false;
+            lock (_comicsLock) // Lock for finding and updating item in _comics collection
             {
                 Comic? existingComic = _comics.FirstOrDefault(c => c.Id == comic.Id);
                 if (existingComic == null)
@@ -234,23 +277,44 @@ namespace ComicRentalSystem_14Days.Services
                     throw ex;
                 }
 
-                existingComic.Title = comic.Title;
-                existingComic.Author = comic.Author;
-                existingComic.Isbn = comic.Isbn;
-                existingComic.Genre = comic.Genre;
-                existingComic.IsRented = comic.IsRented;
-                existingComic.RentedToMemberId = comic.RentedToMemberId;
-                _logger.Log($"ID {comic.Id} (書名='{existingComic.Title}') 的漫畫屬性已在記憶體中更新。");
+                // Check if any property actually changed to avoid unnecessary save
+                if (existingComic.Title != comic.Title || existingComic.Author != comic.Author ||
+                    existingComic.Isbn != comic.Isbn || existingComic.Genre != comic.Genre ||
+                    existingComic.IsRented != comic.IsRented || existingComic.RentedToMemberId != comic.RentedToMemberId ||
+                    existingComic.RentalDate != comic.RentalDate || existingComic.ReturnDate != comic.ReturnDate ||
+                    existingComic.ActualReturnTime != comic.ActualReturnTime)
+                {
+                    existingComic.Title = comic.Title;
+                    existingComic.Author = comic.Author;
+                    existingComic.Isbn = comic.Isbn;
+                    existingComic.Genre = comic.Genre;
+                    existingComic.IsRented = comic.IsRented;
+                    existingComic.RentedToMemberId = comic.RentedToMemberId;
+                    existingComic.RentalDate = comic.RentalDate;
+                    existingComic.ReturnDate = comic.ReturnDate;
+                    existingComic.ActualReturnTime = comic.ActualReturnTime;
+                    _logger.Log($"ID {comic.Id} (書名='{existingComic.Title}') 的漫畫屬性已在記憶體中更新。");
+                    needsSave = true;
+                }
+                else
+                {
+                    _logger.Log($"ID {comic.Id} (書名='{existingComic.Title}') 的漫畫屬性未變更。略過儲存。");
+                }
+            }
 
-                SaveComics(); 
-                _logger.Log($"ID為: {comic.Id} (書名='{existingComic.Title}') 的漫畫更新已保存到檔案。");
+            if (needsSave)
+            {
+                await SaveComicsAsync();
+                _logger.Log($"ID為: {comic.Id} 的漫畫更新已請求非同步保存。");
             }
         }
 
-        public void DeleteComic(int id)
+        public async Task DeleteComicAsync(int id)
         {
             _logger.Log($"正在嘗試刪除ID為: {id} 的漫畫。");
-            lock (_comicsLock)
+            bool removed = false;
+            string? comicTitle = null;
+            lock (_comicsLock) // Lock for finding and removing item from _comics collection
             {
                 Comic? comicToRemove = _comics.FirstOrDefault(c => c.Id == id);
 
@@ -266,14 +330,21 @@ namespace ComicRentalSystem_14Days.Services
                     _logger.LogWarning($"已阻止刪除已租借的漫畫ID {id} ('{comicToRemove.Title}')。由會員ID: {comicToRemove.RentedToMemberId} 租借。");
                     throw new InvalidOperationException("無法刪除漫畫: 漫畫目前已租借。");
                 }
+                comicTitle = comicToRemove.Title;
+                removed = _comics.Remove(comicToRemove);
+                if(removed)
+                {
+                    _logger.Log($"漫畫 '{comicTitle}' (ID: {id}) 已從記憶體列表移除。漫畫總數: {_comics.Count}。");
+                }
+            }
 
-                _comics.Remove(comicToRemove);
-                _logger.Log($"漫畫 '{comicToRemove.Title}' (ID: {id}) 已從記憶體列表移除。漫畫總數: {_comics.Count}。");
-                SaveComics(); 
+            if(removed)
+            {
+                await SaveComicsAsync();
             }
         }
 
-        private int GetNextIdInternal()
+        private int GetNextIdInternal() // This method is called within a lock in AddComicAsync
         {
             int nextId = !_comics.Any() ? 1 : _comics.Max(c => c.Id) + 1;
             _logger.Log($"下一個可用的漫畫ID已確定為: {nextId}。");
@@ -344,7 +415,7 @@ namespace ComicRentalSystem_14Days.Services
 
                 if (comic.IsRented && comic.RentedToMemberId != 0)
                 {
-                    viewModel.Status = "被借閱";
+                    viewModel.Status = Constants.ComicStatuses.Rented; // Replaced
                     if (memberLookup.TryGetValue(comic.RentedToMemberId, out Member? borrower))
                     {
                         viewModel.BorrowerName = borrower.Name;

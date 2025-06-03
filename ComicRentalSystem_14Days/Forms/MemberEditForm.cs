@@ -72,7 +72,7 @@ namespace ComicRentalSystem_14Days.Forms
             LogActivity("會員資料已載入表單控制項。");
         }
 
-        private void btnSaveMember_Click(object sender, EventArgs e)
+        private async void btnSaveMember_Click(object sender, EventArgs e) // Changed to async void
         {
             if (_memberService == null)
             {
@@ -100,8 +100,8 @@ namespace ComicRentalSystem_14Days.Forms
                     LogActivity($"正在嘗試儲存現有會員ID: {_editableMember.Id} 的變更。");
                     _editableMember.Name = name;
                     _editableMember.PhoneNumber = phoneNumber;
-                    _memberService.UpdateMember(_editableMember);
-                    LogActivity($"會員ID: {_editableMember.Id} 已成功更新。");
+                    await _memberService.UpdateMemberAsync(_editableMember); // Changed to await async version
+                    LogActivity($"會員ID: {_editableMember.Id} 已成功更新 (非同步)。");
                     MessageBox.Show("會員資料已更新。", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
                 else
@@ -111,9 +111,10 @@ namespace ComicRentalSystem_14Days.Forms
                     {
                         Name = name,
                         PhoneNumber = phoneNumber
+                        // Username will be set by RegistrationForm if this form is used for initial creation post-registration
                     };
-                    _memberService.AddMember(newMember);
-                    LogActivity($"新會員 '{newMember.Name}' (ID: {newMember.Id}) 已成功新增。");
+                    await _memberService.AddMemberAsync(newMember); // Changed to await async version
+                    LogActivity($"新會員 '{newMember.Name}' (ID: {newMember.Id}) 已成功新增 (非同步)。");
                     MessageBox.Show("會員已成功新增。", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
 

@@ -41,7 +41,7 @@ namespace ComicRentalSystem_14Days.Forms
             _logger.Log("註冊表單已初始化。");
         }
 
-        private void btnRegister_Click(object sender, EventArgs e)
+        private async void btnRegister_Click(object sender, EventArgs e) // Changed to async void
         {
             if (!this.ValidateChildren()) {
                 MessageBox.Show("請修正欄位中提示的錯誤。", "驗證錯誤", MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -51,7 +51,7 @@ namespace ComicRentalSystem_14Days.Forms
 
             string username = txtUsername.Text.Trim();
             string password = txtPassword.Text;
-            string confirmPassword = txtConfirmPassword.Text;
+            // string confirmPassword = txtConfirmPassword.Text; // confirmPassword is validated by txtConfirmPassword_Validating
             string name = txtName.Text.Trim();
             string phoneNumber = txtPhoneNumber.Text.Trim();
 
@@ -62,20 +62,22 @@ namespace ComicRentalSystem_14Days.Forms
             }
             else
             {
-                selectedRole = UserRole.Member; 
+                selectedRole = UserRole.Member;
             }
 
             _logger.Log($"使用者註冊嘗試: {username}, 姓名: {name}, 電話: {phoneNumber}, 角色: {selectedRole}");
-            bool success = _authService.Register(username, password, selectedRole);
 
-            if (success)
+            // Authentication is still synchronous
+            bool authSuccess = _authService.Register(username, password, selectedRole);
+
+            if (authSuccess)
             {
                 _logger.Log($"使用者 '{username}' (來自txtUsername) 已成功註冊為 {selectedRole}。");
                 try
                 {
                     Member newMember = new Member { Name = name, PhoneNumber = phoneNumber, Username = username };
-                    _memberService.AddMember(newMember);
-                    _logger.Log($"已為姓名: {name}, 使用者名稱: {username}, 電話: {phoneNumber} 建立會員記錄。");
+                    await _memberService.AddMemberAsync(newMember); // Changed to await async version
+                    _logger.Log($"已為姓名: {name}, 使用者名稱: {username}, 電話: {phoneNumber} 建立會員記錄 (非同步)。");
 
                     MessageBox.Show($"使用者 '{username}' (姓名: {name}) 已成功註冊，會員資料也已建立。", "註冊成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     txtUsername.Clear();

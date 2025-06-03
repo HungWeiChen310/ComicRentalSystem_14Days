@@ -138,8 +138,8 @@ namespace ComicRentalSystem_14Days.Forms
                     _editableComic.Author = txtAuthor.Text.Trim();
                     _editableComic.Isbn = txtIsbn.Text.Trim();
                     _editableComic.Genre = txtGenre.Text.Trim();
-                    _comicService.UpdateComic(_editableComic);
-                    LogActivity($"漫畫ID: {_editableComic.Id} 已成功更新。");
+                    await _comicService.UpdateComicAsync(_editableComic); // Changed to await async version
+                    LogActivity($"漫畫ID: {_editableComic.Id} 已成功更新 (非同步)。");
                     MessageBox.Show("漫畫資料已更新。", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
                 else
@@ -154,9 +154,9 @@ namespace ComicRentalSystem_14Days.Forms
                         IsRented = false,
                         RentedToMemberId = 0
                     };
-                    _comicService.AddComic(newComic);
-                    await _comicService.ReloadAsync();
-                    LogActivity($"新漫畫 '{newComic.Title}' (ID: {newComic.Id}) 已成功新增。");
+                    await _comicService.AddComicAsync(newComic); // Changed to await async version
+                    // await _comicService.ReloadAsync(); // Removed, ComicsChanged event in ManagementForm will handle refresh
+                    LogActivity($"新漫畫 '{newComic.Title}' (ID: {newComic.Id}) 已成功新增 (非同步)。");
                     MessageBox.Show("漫畫已成功新增。", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
 
